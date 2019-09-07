@@ -13,22 +13,22 @@ $ go run ./cmd/main.go
 In another shell connect to it on localhost:6379 with nc.
 ````
 $ nc localhost 6379
-add 12 123494
-OK
-get 12
-123494
-remove 12
-123494
-get 12
--1
-add 11 123484
-OK
-get 11
-123484
-evict
-OK
-get 11
--1
+set mykey somevalue34344 
+
+get mykey
+somevalue34344
+del mykey
+(integer) 1
+get mykey
+(nil)
+set mykey 8
+
+incr mykey
+9
+get mykey
+9
+
+
 ```
 
 

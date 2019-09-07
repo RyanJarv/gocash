@@ -15,7 +15,7 @@ func MaxInt(args ...int) (max int) {
 }
 
 // CheckArgs validates `expected` number of args in `got`
-func CheckArgs(expected int, got []int) error {
+func CheckArgs(expected int, got []string) error {
 	numArgs := len(got)
 	if numArgs != expected {
 		return fmt.Errorf(fmt.Sprintf("Expected %d arguments but only got %d (%v)", expected, numArgs, got))

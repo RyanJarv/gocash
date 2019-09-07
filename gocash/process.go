@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 )
 
@@ -40,37 +39,29 @@ func (p *Process) handle(conn *net.Conn) {
 	for scan.Scan() {
 		cmd, args, err := p.parse(scan.Text())
 		if err != nil {
-			fmt.Fprintln(*conn, "[ERROR]", err)
+			fmt.Fprintln(*conn, "ERR", err)
 			return
 		}
 		ret, err := p.cache.Call(cmd, args...)
 		if err != nil {
-			fmt.Fprintln(*conn, "[ERROR]", err)
+			fmt.Fprintln(*conn, "ERR", err)
 			continue
 		}
-		if ret == -101 {
-			fmt.Fprintln(*conn, "OK")
-		} else {
-			fmt.Fprintln(*conn, ret)
-		}
+		fmt.Fprintln(*conn, ret)
 	}
 	<-p.maxProcs
 }
 
-func (p *Process) parse(line string) (string, []int, error) {
+func (p *Process) parse(line string) (string, []string, error) {
 	scan := bufio.NewScanner(strings.NewReader(line))
 	scan.Split(bufio.ScanWords)
 
 	scan.Scan()
 	cmd := scan.Text()
 
-	var args []int
+	var args []string
 	for scan.Scan() {
-		arg, err := strconv.Atoi(scan.Text())
-		if err != nil {
-			return "", []int{}, err
-		}
-		args = append(args, arg)
+		args = append(args, scan.Text())
 	}
 
 	if scan.Err() != nil {
