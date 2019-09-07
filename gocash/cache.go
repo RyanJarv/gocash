@@ -3,6 +3,8 @@ package gocash
 import (
 	"container/list"
 	"fmt"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -62,29 +64,41 @@ func (c *Cache) Call(cmd string, args ...string) (string, error) {
 		return "", fmt.Errorf("Unkown or disabled command '%s'", cmd)
 	}
 
-	var ret string
-	switch t := f.(type) {
-	case func() string:
-		if err := CheckArgs(0, args); err != nil {
-			return "", err
-		}
-		t()
-	case func(string, string) string:
-		if err := CheckArgs(2, args); err != nil {
-			return "", err
-		}
-		t(args[0], args[1])
-	case func(string) string:
-		if err := CheckArgs(1, args); err != nil {
-			return "", err
-		}
-		ret = t(args[0])
-	case func(...string) string:
-		ret = t(args[0])
-	default:
-		return "", fmt.Errorf("Cmd signature not found for %v", t)
+	resp, err := c.call(f, args...)
+	if err != nil {
+		return "", err
 	}
-	return ret, nil
+	return resp, nil
+}
+
+func (c *Cache) call(f interface{}, args ...string) (string, error) {
+	rf := reflect.TypeOf(f)
+	vf := reflect.ValueOf(f)
+	if rf.Kind() != reflect.Func {
+		panic("expects a function")
+	}
+
+	funcName := runtime.FuncForPC(vf.Pointer()).Name()
+	for i, arg := range args {
+		if expected := rf.NumIn(); i >= expected {
+			return "", fmt.Errorf("%s expected %d arguments, revieved %d", funcName, expected, len(args))
+		}
+		argType := reflect.TypeOf(arg)
+		if rf.In(i) != argType {
+			return "", fmt.Errorf("%s's arg %d expected type %s, got %v of type %s", funcName, i, rf.In(i), arg, argType.Name())
+		}
+	}
+
+	vArgs := make([]reflect.Value, 0, len(args))
+	for _, arg := range args {
+		vArgs = append(vArgs, reflect.ValueOf(arg))
+	}
+
+	vRets := vf.Call(vArgs)
+	if vRets[0].Type().Kind() != reflect.String {
+		return "", fmt.Errorf("Expected string for %s first return type", funcName)
+	}
+	return vRets[0].String(), nil
 }
 
 // Evict drops the oldest accessed cache item to allow freeing up memory
