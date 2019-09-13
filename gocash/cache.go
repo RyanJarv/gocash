@@ -1,7 +1,6 @@
 package gocash
 
 import (
-	"container/list"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -9,7 +8,32 @@ import (
 	"strings"
 )
 
-type cacheItems map[string]*list.Element
+// ValueType is redis's 1byte declaration of encoding
+type ValueType uint8
+
+// Declares ValueType Encodings
+const (
+	String ValueType = iota // 0
+	List
+	Set
+	SortedSet
+	HashEnc
+	_
+	_
+	_
+	_
+	ZipMap // 9
+	ZipList
+	IntSet
+	SortedSetInZipList
+	HashMapInZipList
+)
+
+// Similar to redis's RDB format except key and value are not stored the same way
+type redisElem struct {
+	valueType ValueType
+	value     interface{}
+}
 
 // NewCache returns a pointer to an new Cache object
 func NewCache() (cache *Cache) {
@@ -68,7 +92,11 @@ func (c *Cache) Call(cmd string, args ...string) (string, error) {
 
 // CmdSet puts `value` in the cache accessiable by `key`
 func (c *Cache) CmdSet(key, value string) string {
-	if c.cache.Put([]byte(key), []byte(value)) != nil {
+	elem := redisElem{
+		valueType: String,
+		value:     value,
+	}
+	if c.cache.Put(key, elem) != nil {
 		panic(fmt.Errorf("Unable to set key %v to value %v", key, value))
 	}
 	return "OK"
@@ -76,8 +104,11 @@ func (c *Cache) CmdSet(key, value string) string {
 
 // CmdAppend extends `key` with `value`, return is length of new string
 func (c *Cache) CmdAppend(key, value string) string {
-	if tmpValue, err := c.cache.Get([]byte(key)); err == nil {
-		value = string(append(tmpValue, []byte(value)...))
+	if tmpValue, err := c.cache.Get(key); err == nil {
+		if tmpValue.(redisElem).valueType != String {
+			panic(fmt.Errorf("Key %v is not of type String", key))
+		}
+		value = strings.Join([]string{tmpValue.(redisElem).value.(string), value}, "")
 	}
 	ret := c.CmdSet(key, value)
 	if string(ret) == "OK" {
@@ -88,8 +119,14 @@ func (c *Cache) CmdAppend(key, value string) string {
 
 // CmdGet returns the value in cache accessable by `key` or -1 if it doesn't exist
 func (c *Cache) CmdGet(key string) string {
-	if value, err := c.cache.Get([]byte(key)); err == nil {
-		return string(value)
+	if value, err := c.cache.Get(key); err == nil {
+		elem := value.(redisElem)
+		switch elem.valueType {
+		case String:
+			return elem.value.(string)
+		default:
+			panic(fmt.Sprintf("CmdGet not implemented for the value type of %v", elem.value))
+		}
 	}
 	return "(nil)" // Doesn't exist
 }
@@ -98,10 +135,15 @@ func (c *Cache) CmdGet(key string) string {
 // TODO: dedup update code
 func (c *Cache) CmdDecr(key string) string {
 	var err error
-	var value []byte
+	var value interface{}
+	var elem redisElem
 	var tmpValue int
-	if value, err = c.cache.Get([]byte(key)); err != nil {
-		tmpValue, err = strconv.Atoi(string(value))
+	if value, err = c.cache.Get(key); err != nil {
+		elem = value.(redisElem)
+		if elem.valueType != String {
+			panic(fmt.Errorf("CmdDecr not implented for value type of value %s", elem.value))
+		}
+		tmpValue, err = strconv.Atoi(elem.value.(string))
 		if err != nil {
 			return "Err value is not an integer or is out of range"
 		}
@@ -118,10 +160,15 @@ func (c *Cache) CmdDecr(key string) string {
 // TODO: dedup update code
 func (c *Cache) CmdIncr(key string) string {
 	var err error
-	var value []byte
+	var value interface{}
+	var elem redisElem
 	var tmpValue int
-	if value, err = c.cache.Get([]byte(key)); err != nil {
-		tmpValue, err = strconv.Atoi(string(value))
+	if value, err = c.cache.Get(key); err != nil {
+		elem = value.(redisElem)
+		if elem.valueType != String {
+			panic(fmt.Errorf("CmdIncr not implented for value type of value %s", elem.value))
+		}
+		tmpValue, err = strconv.Atoi(elem.value.(string))
 		if err != nil {
 			return "Err value is not an integer or is out of range"
 		}
@@ -140,8 +187,8 @@ func (c *Cache) CmdEcho(arg string) string {
 }
 
 // CmdExists returns 1 if key exists, 0 otherwise
-func (c *Cache) CmdExists(key []byte) string {
-	if _, err := c.cache.Get([]byte(key)); err != nil {
+func (c *Cache) CmdExists(key string) string {
+	if _, err := c.cache.Get(key); err != nil {
 		return "(integer) 1"
 	}
 	return "(integer) 0"
@@ -151,7 +198,7 @@ func (c *Cache) CmdExists(key []byte) string {
 func (c *Cache) CmdDel(keys ...string) string {
 	deleted := 0
 	for _, key := range keys {
-		_, err := c.cache.Remove([]byte(key))
+		_, err := c.cache.Remove(key)
 		if err != nil {
 			deleted++
 		}

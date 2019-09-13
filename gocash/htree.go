@@ -13,12 +13,12 @@ import (
 //
 
 type entry struct {
-	key   []byte
-	value []byte
+	key   string
+	value interface{}
 	next  *entry
 }
 
-func (e *entry) Put(key, value []byte) (*entry, bool) {
+func (e *entry) Put(key string, value interface{}) (*entry, bool) {
 	if e == nil {
 		return &entry{key, value, nil}, true
 	}
@@ -31,7 +31,7 @@ func (e *entry) Put(key, value []byte) (*entry, bool) {
 	return e, appended
 }
 
-func (e *entry) Get(key []byte) (bool, []byte) {
+func (e *entry) Get(key string) (bool, interface{}) {
 	if e == nil {
 		return false, nil
 	} else if reflect.DeepEqual(e.key, key) {
@@ -40,7 +40,7 @@ func (e *entry) Get(key []byte) (bool, []byte) {
 	return e.next.Get(key)
 }
 
-func (e *entry) Remove(key []byte) *entry {
+func (e *entry) Remove(key string) *entry {
 	if e == nil {
 		panic("Not found in bucket")
 	}
@@ -76,7 +76,7 @@ type Hash struct {
 	hasher     hash.Hash
 }
 
-func (h *Hash) bucket(key []byte) uint32 {
+func (h *Hash) bucket(key string) uint32 {
 	defer h.hasher.Reset()
 	h.hasher.Write([]byte(key))
 	return binary.LittleEndian.Uint32(h.hasher.Sum(nil)) % h.bucketSize
@@ -102,7 +102,7 @@ func (h *Hash) copyIfSnapshot(bucket uint32) {
 }
 
 // Put inserts or updates `key` with `value` of the Hash Tree
-func (h *Hash) Put(key []byte, value []byte) error {
+func (h *Hash) Put(key string, value interface{}) error {
 	bucket := h.bucket(key)
 	h.copyIfSnapshot(bucket)
 	var appended bool
@@ -114,7 +114,7 @@ func (h *Hash) Put(key []byte, value []byte) error {
 }
 
 // Get the value of `key`
-func (h *Hash) Get(key []byte) ([]byte, error) {
+func (h *Hash) Get(key string) (interface{}, error) {
 	bucket := h.bucket(key)
 	if has, value := (*h.table[bucket]).Get(key); has {
 		return value, nil
@@ -123,7 +123,7 @@ func (h *Hash) Get(key []byte) ([]byte, error) {
 }
 
 // Remove the entry of `key`
-func (h *Hash) Remove(key []byte) ([]byte, error) {
+func (h *Hash) Remove(key string) (interface{}, error) {
 	bucket := h.bucket(key)
 	h.copyIfSnapshot(bucket)
 	has, value := (*h.table[bucket]).Get(key)
