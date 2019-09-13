@@ -13,27 +13,13 @@ type cacheItems map[string]*list.Element
 
 // NewCache returns a pointer to an new Cache object
 func NewCache() (cache *Cache) {
-	cache = &Cache{}
-	cache.setup()
-	return
-}
-
-type Item struct {
-	Key   string
-	Value string
-	Elem  interface{}
+	return &Cache{cache: NewHash()}
 }
 
 // Cache supports various actions on an lru cache
 type Cache struct {
-	lru   *list.List // Double linked list
-	cache cacheItems
+	cache *Hash
 	Cmds  map[string]interface{}
-}
-
-func (c *Cache) setup() {
-	c.lru = list.New()
-	c.cache = make(cacheItems, 1000)
 }
 
 // Call takes `cmd` string and `args` ...int and calls the appropriate function
@@ -80,28 +66,21 @@ func (c *Cache) Call(cmd string, args ...string) (string, error) {
 	return vRets[0].String(), nil
 }
 
-// Evict drops the oldest accessed cache item to allow freeing up memory
-func (c *Cache) Evict() string {
-	elem := c.lru.Back()
-	delete(c.cache, (*elem).Value.(Item).Key)
-	c.lru.Remove(elem)
-	return "OK"
-}
-
 // CmdSet puts `value` in the cache accessiable by `key`
-func (c *Cache) CmdSet(key string, value string) string {
-	elem := c.lru.PushFront(Item{Key: key, Value: value})
-	c.cache[key] = elem
+func (c *Cache) CmdSet(key, value string) string {
+	if c.cache.Put([]byte(key), []byte(value)) != nil {
+		panic(fmt.Errorf("Unable to set key %v to value %v", key, value))
+	}
 	return "OK"
 }
 
 // CmdAppend extends `key` with `value`, return is length of new string
-func (c *Cache) CmdAppend(key string, value string) string {
-	if elem, exists := c.cache[key]; exists {
-		value = strings.Join([]string{elem.Value.(Item).Value, value}, "")
+func (c *Cache) CmdAppend(key, value string) string {
+	if tmpValue, err := c.cache.Get([]byte(key)); err == nil {
+		value = string(append(tmpValue, []byte(value)...))
 	}
 	ret := c.CmdSet(key, value)
-	if ret == "OK" {
+	if string(ret) == "OK" {
 		return fmt.Sprintf("(integer) %d", len(value))
 	}
 	return ret
@@ -109,9 +88,8 @@ func (c *Cache) CmdAppend(key string, value string) string {
 
 // CmdGet returns the value in cache accessable by `key` or -1 if it doesn't exist
 func (c *Cache) CmdGet(key string) string {
-	if elem, exists := c.cache[key]; exists {
-		c.lru.MoveToFront(elem)
-		return elem.Value.(Item).Value
+	if value, err := c.cache.Get([]byte(key)); err == nil {
+		return string(value)
 	}
 	return "(nil)" // Doesn't exist
 }
@@ -120,40 +98,40 @@ func (c *Cache) CmdGet(key string) string {
 // TODO: dedup update code
 func (c *Cache) CmdDecr(key string) string {
 	var err error
-	var value int
-	if elem, exists := c.cache[key]; exists {
-		c.lru.MoveToFront(elem)
-		value, err = strconv.Atoi(elem.Value.(Item).Value)
+	var value []byte
+	var tmpValue int
+	if value, err = c.cache.Get([]byte(key)); err != nil {
+		tmpValue, err = strconv.Atoi(string(value))
 		if err != nil {
 			return "Err value is not an integer or is out of range"
 		}
-		value--
+		tmpValue--
 	}
-	resp := c.CmdSet(key, strconv.Itoa(value))
-	if resp != "OK" {
+	resp := c.CmdSet(key, strconv.Itoa(tmpValue))
+	if string(resp) != "OK" {
 		return resp
 	}
-	return strconv.Itoa(value)
+	return strconv.Itoa(tmpValue)
 }
 
 // CmdIncr sets and returns the decremented value of `key`
 // TODO: dedup update code
 func (c *Cache) CmdIncr(key string) string {
 	var err error
-	var value int
-	if elem, exists := c.cache[key]; exists {
-		c.lru.MoveToFront(elem)
-		value, err = strconv.Atoi(elem.Value.(Item).Value)
+	var value []byte
+	var tmpValue int
+	if value, err = c.cache.Get([]byte(key)); err != nil {
+		tmpValue, err = strconv.Atoi(string(value))
 		if err != nil {
 			return "Err value is not an integer or is out of range"
 		}
-		value++
+		tmpValue++
 	}
-	resp := c.CmdSet(key, strconv.Itoa(value))
-	if resp != "OK" {
+	resp := c.CmdSet(key, strconv.Itoa(tmpValue))
+	if string(resp) != "OK" {
 		return resp
 	}
-	return strconv.Itoa(value)
+	return strconv.Itoa(tmpValue)
 }
 
 // CmdEcho returns arg as it was passed
@@ -162,8 +140,8 @@ func (c *Cache) CmdEcho(arg string) string {
 }
 
 // CmdExists returns 1 if key exists, 0 otherwise
-func (c *Cache) CmdExists(key string) string {
-	if _, exists := c.cache[key]; exists {
+func (c *Cache) CmdExists(key []byte) string {
+	if _, err := c.cache.Get([]byte(key)); err != nil {
 		return "(integer) 1"
 	}
 	return "(integer) 0"
@@ -173,12 +151,16 @@ func (c *Cache) CmdExists(key string) string {
 func (c *Cache) CmdDel(keys ...string) string {
 	deleted := 0
 	for _, key := range keys {
-		elem, found := c.cache[key]
-		if found {
+		_, err := c.cache.Remove([]byte(key))
+		if err != nil {
 			deleted++
 		}
-		c.lru.Remove(elem)
-		delete(c.cache, key)
 	}
 	return fmt.Sprintf("(integer) %d", deleted)
+}
+
+// CmdSave snapshots the current cache
+func (c *Cache) CmdSave() string {
+	c.cache.Snapshot()
+	return "OK"
 }
