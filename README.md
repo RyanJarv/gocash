@@ -11,7 +11,7 @@ $ go run ./cmd/main.go
 ```
 
 In another shell connect to it on localhost:6379 with nc.
-````
+```
 $ nc localhost 6379
 set mykey somevalue34344 
 
@@ -27,8 +27,6 @@ incr mykey
 9
 get mykey
 9
-
-
 ```
 
 
