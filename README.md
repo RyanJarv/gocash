@@ -1,4 +1,4 @@
-This was mostly just a side project for fun. It does not handle race conditions currently.
+This was mostly just a side project for fun to figure out how background saving might be emulated in golang. It does not handle race conditions currently and is not usable for any real purpose.
 
 ## Goal
 Redis like caching^Wcashing  service in golang
