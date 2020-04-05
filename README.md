@@ -1,4 +1,4 @@
-This was mostly just a side project for fun.
+This was mostly just a side project for fun. It does not handle race conditions currently.
 
 ## Goal
 Redis like caching^Wcashing  service in golang
