@@ -1,4 +1,4 @@
-This is a work in progress
+This was mostly just a side project for fun.
 
 ## Goal
 Redis like caching^Wcashing  service in golang
